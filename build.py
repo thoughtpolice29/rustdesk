@@ -323,7 +323,7 @@ def build_flutter_deb(version, features):
     system2('mkdir -p tmpdeb/usr/share/polkit-1/actions')
     system2('rm tmpdeb/usr/bin/rustdesk || true')
     system2(
-        f'cp -r {flutter_build_dir}/* tmpdeb/usr/lib/rustdesk/')
+        f'cp -r {flutter_build_dir}* tmpdeb/usr/lib/rustdesk/')
     system2(
         'cp ../res/rustdesk.service tmpdeb/usr/share/rustdesk/files/systemd/')
     system2(
@@ -420,7 +420,7 @@ def build_flutter_arch_manjaro(version, features):
     ffi_bindgen_function_refactor()
     os.chdir('flutter')
     system2('flutter build linux --release')
-    system2(f'strip {flutter_build_dir}/lib/librustdesk.so')
+    system2(f'strip {flutter_build_dir}lib/librustdesk.so')
     os.chdir('../res')
     system2('HBB=`pwd`/.. FLUTTER=1 makepkg -f')
 
@@ -441,7 +441,7 @@ def build_flutter_windows(version, features, skip_portable_pack):
     os.chdir('libs/portable')
     system2('pip3 install -r requirements.txt')
     system2(
-        f'python3 ./generate.py -f ../../{flutter_build_dir_2} -o . -e ../../{flutter_build_dir_2}/rustdesk.exe')
+        f'python ./generate.py -f ../../{flutter_build_dir_2} -o ./ -e ../../{flutter_build_dir_2}rustdesk.exe')
     os.chdir('../..')
     if os.path.exists('./rustdesk_portable.exe'):
         os.replace('./target/release/rustdesk-portable-packer.exe',
@@ -451,7 +451,14 @@ def build_flutter_windows(version, features, skip_portable_pack):
                   './rustdesk_portable.exe')
     print(
         f'output location: {os.path.abspath(os.curdir)}/rustdesk_portable.exe')
-    os.rename('./rustdesk_portable.exe', f'./rustdesk-{version}-install.exe')
+    
+    #respect system ACLs and prevent 'except FileExistsError' handling
+    if os.path.exists(f'./rustdesk-{version}-install.exe'):
+        os.replace('./rustdesk_portable.exe',
+                   f'./rustdesk-{version}-install.exe')
+    else:
+        shutil.copy2('./rustdesk_portable.exe',
+                    f'./rustdesk-{version}-install.exe')
     print(
         f'output location: {os.path.abspath(os.curdir)}/rustdesk-{version}-install.exe')
 
@@ -469,7 +476,11 @@ def main():
     features = ','.join(get_features(args))
     flutter = args.flutter
     if not flutter:
-        system2('python3 res/inline-sciter.py')
+        #By default system uses python instead of python3 in windows, and *NIX is the opposite (unless python-is-python3 package is installed)
+        if not windows:
+            system2('python3 res/inline-sciter.py')
+        else:
+            system2('python res/inline-sciter.py')
     print(args.skip_cargo)
     if args.skip_cargo:
         skip_cargo = True
@@ -491,7 +502,9 @@ def main():
             return
         system2('cargo build --release --features ' + features)
         # system2('upx.exe target/release/rustdesk.exe')
-        system2('mv target/release/rustdesk.exe target/release/RustDesk.exe')
+        # system2('mv target/release/rustdesk.exe target/release/RustDesk.exe') <- This won't work under Windows CMD shell
+        os.replace('target/release/rustdesk.exe',
+            'target/release/RustDesk.exe')
         pa = os.environ.get('P')
         if pa:
             # https://certera.com/kb/tutorial-guide-for-safenet-authentication-client-for-code-signing/
@@ -500,13 +513,16 @@ def main():
                 'target\\release\\rustdesk.exe')
         else:
             print('Not signed')
-        system2(
-            f'cp -rf target/release/RustDesk.exe {res_dir}')
+        # system2(
+        #    f'cp -rf target/release/RustDesk.exe {res_dir}') <- This wont work via Windows CMD shell
+        shutil.copy2('target/release/RustDesk.exe', f'{res_dir}/RustDesk.exe')
         os.chdir('libs/portable')
         system2('pip3 install -r requirements.txt')
         system2(
-            f'python3 ./generate.py -f ../../{res_dir} -o . -e ../../{res_dir}/rustdesk-{version}-win7-install.exe')
-        system2('mv ../../{res_dir}/rustdesk-{version}-win7-install.exe ../..')
+            f'python ./generate.py -f ../../{res_dir} -o . -e ../../{res_dir}/rustdesk-{version}-win7-install.exe')
+        # system2('mv ../../{res_dir}/rustdesk-{version}-win7-install.exe ../..') <- This wont work via Windows CMD shell
+        os.replace(f'../../{res_dir}/rustdesk-{version}-win7-install.exe',
+            f'../../rustdesk-{version}-win7-install.exe')
     elif os.path.isfile('/usr/bin/pacman'):
         # pacman -S -needed base-devel
         system2("sed -i 's/pkgver=.*/pkgver=%s/g' res/PKGBUILD" % version)
